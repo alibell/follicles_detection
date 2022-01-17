@@ -374,7 +374,7 @@ class follicleClassifier(nn.Module):
             std=[0.229, 0.224, 0.225]
         )
 
-        ## Loading Inception3 and freezing the parameters
+        ## Loading VGG16 and freezing the parameters
         vgg_model = vgg16(pretrained=True)
         for param in vgg_model.parameters():
             param.requires_grad = False
