@@ -61,6 +61,9 @@ class imageDataLoader():
         else:
             self.has_y = False 
 
+    def __len__ (self):
+        return len(self.X_filenames)
+
     def _load_image(self, image_path):
         """load_image
 
@@ -774,7 +777,8 @@ class ObjectDetector:
                 dataset_for_follicle_classifier_original = [original_image_crop, original_data[2]]
 
                 ##  Dataset from boxes
-                ### Here we compute a matrix of zeros with the location of original labelled data, we only keep box which intersect with theses
+                ### Here we compute a matrix of zeros with the location of original labelled data
+                ### We only keep box which intersect with theses
                 boxes = self._get_box_list(image_loader=image_loader, image_name=filename)
 
                 label_matrix = np.zeros(original_data[-1][0:2])
