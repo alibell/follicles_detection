@@ -900,10 +900,10 @@ class ObjectDetector:
             y_hat_labels = np.vectorize(lambda x: self._class_dict[x])(y_hat_labels_id)
 
             predictions.append([
-                dict(
+                dict(zip(
                     ["bbox","proba","class"],
                     pred
-                ) for pred in zip(y_hat_box, y_hat_proba.numpy().tolist(), y_hat_labels)
+                )) for pred in zip(y_hat_box, y_hat_proba.numpy().tolist(), y_hat_labels)
             ])
 
         return predictions
