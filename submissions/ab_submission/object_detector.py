@@ -901,7 +901,8 @@ class ObjectDetector:
 
             predictions.append([
                 dict(
-                    ("bbox",pred[0]),("proba",pred[1]),("class",pred[2])
+                    ["bbox","proba","class"],
+                    pred
                 ) for pred in zip(y_hat_box, y_hat_proba.numpy().tolist(), y_hat_labels)
             ])
 
