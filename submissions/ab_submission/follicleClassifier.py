@@ -47,22 +47,23 @@ class follicleClassifier(nn.Module):
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(output_size=(1, 1)),
             nn.Flatten(),
+            nn.Dropout(0.5),
             nn.Linear(
                 in_features=512,
                 out_features=125,
                 bias=True
             ),
-            nn.Dropout(0.3),
-            nn.BatchNorm1d(num_features=125),
             nn.ReLU(),
+            nn.Dropout(0.7),
+            nn.BatchNorm1d(num_features=125),
             nn.Linear(
                 in_features=125,
                 out_features=25,
                 bias=True
             ),
-            nn.Dropout(0.3),
-            nn.BatchNorm1d(num_features=25),
             nn.ReLU(),
+            nn.Dropout(0.7),
+            nn.BatchNorm1d(num_features=25),
             nn.Linear(
                 in_features=25,
                 out_features=5,
@@ -98,6 +99,23 @@ class follicleClassifier(nn.Module):
 
         return y_hat
 
+    def forward_intermediate(self, X):
+        """forward_intermediate
+        Required to perform the forward pass of the intermediate layers of the network.
+
+        Parameters
+        ----------
+        X : torch tensor of size (n, 3, w, h) with n the number of samples, w the image width and h the image height
+
+        Output
+        ------
+        Torch tensor of sice (n, 125) with 125 the representation of the data
+        """
+
+        y_hat = self.network[0:9](X)
+
+        return y_hat
+
     def fit(self, X, y, verbose=True):
         """fit
         Train the neural network
@@ -125,7 +143,7 @@ class follicleClassifier(nn.Module):
         self.losses.append(loss.item())
 
     def predict(self, X):
-        """fit
+        """predict
         Get the neural network prediction
 
         Parameters
@@ -137,6 +155,22 @@ class follicleClassifier(nn.Module):
 
         with torch.no_grad():
             y_hat = self.forward(X)
+            
+        return y_hat
+
+    def predict_intermediate(self, X):
+        """predict_intermediate
+        Get the neural network prediction of intermediate layer of the network
+
+        Parameters
+        ----------
+        X : torch tensor of size (n, 3, w, h) with n the number of samples, w the image width and h the image height,
+        """
+
+        self.eval()
+
+        with torch.no_grad():
+            y_hat = self.forward_intermediate(X)
             
         return y_hat
 

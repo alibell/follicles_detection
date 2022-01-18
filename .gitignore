@@ -3,6 +3,7 @@ data*
 hidden_data*
 data_retina
 images
+datasets
 train
 test
 retinanet

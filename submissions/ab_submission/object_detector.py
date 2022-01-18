@@ -1,33 +1,32 @@
 import numpy as np
 import pandas as pd
-from sklearn.utils import check_array
-from sklearn.tree import DecisionTreeClassifier
-from scipy.ndimage import morphology
-from types import FunctionType
-import torch.nn as nn
-from torch.optim import Adam
-import torch
-from torchvision import transforms
-from torchvision.models import vgg16
-import random
-import imageio
 import cv2
-from joblib import dump, load
+import importlib
 import os
+import sys
+from joblib import dump, load
+from sklearn.tree import DecisionTreeClassifier
+import torch
+from torch.utils.data import DataLoader
 
-from .follicleClassifier import follicleClassifier
-from .dataLoaders import imageDataLoader
+# Adding script folder to the PYHONPATH env variable
+script_path = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_path)
+
+from follicleClassifier import follicleClassifier
+from dataLoaders import imageDataLoader
+from dataset import dataloader_collapse, folliclesDataset
 
 class ObjectDetector:
     def __init__(self, 
                 preprocessing_boxPixelClassifier_convolve=30, 
                 post_processing_boxPixelClassifier_convolve=10, 
-                box_border = 1, 
+                box_border = 1.5, 
                 follicle_classifier_size=128,
                 n_epochs=50,
-                batch_size=16,
+                batch_size=64,
                 ramp_mode=True
-                ):
+            ):
         """
         
         Parameters:
@@ -70,7 +69,10 @@ class ObjectDetector:
         self.follicle_classifier_size = follicle_classifier_size
         self.n_epochs = n_epochs
         self.follicleClassifier_fitted_ = False
-        self.batch_size = batch_size
+        if ramp_mode == False:
+            self.batch_size = batch_size
+        else:
+            self.batch_size = int(batch_size/3) # Ramp may do somes parallelization or something, but it goes easier in OOM
 
         # Defining some pre-processing functions
         self.image_preprocessing = lambda x: cv2.filter2D(
@@ -235,93 +237,36 @@ class ObjectDetector:
         # Skipping if already fitted
         if "box_ratio_" not in dir(self.follicleClassifier):
 
-            # Constitution of the dataset : original cropped image, and box detected by the algorithm
-            original_boxes = image_loader.y_box
-
             # Also learning the correct h/w box ratio
+            original_boxes = image_loader.y_box
             box_ratio = np.quantile([(y[3]-y[2])/(y[1]-y[0]) for y in original_boxes], 0.95)*1.5
-            box_size = np.quantile([(y[3]-y[2])*(y[1]-y[0]) for y in original_boxes], 0.01)/2
-
-            # Storing the correct box ratio in the classifier
+            box_size = np.quantile([(y[3]-y[2])*(y[1]-y[0]) for y in original_boxes], 0.01)
             self.follicleClassifier.box_ratio_ = box_ratio
             self.follicleClassifier.box_size_ = box_size
 
-            dataset_for_follicle_classifier = []
-            for filename in image_loader.X_filenames:
-
-                # Original image
-                original_data = image_loader.get_sample(filename)
-                original_image_crop, _ = image_loader.get_crop(original_data[0], original_data[1])
-
-                ## Dataset from original data
-                dataset_for_follicle_classifier_original = [original_image_crop, original_data[2]]
-
-                ##  Dataset from boxes
-                ### Here we compute a matrix of zeros with the location of original labelled data
-                ### We only keep box which intersect with theses
-                boxes = self._get_box_list(image_loader=image_loader, image_name=filename)
-
-                label_matrix = np.zeros(original_data[-1][0:2])
-                for original_box, original_label in zip(original_data[1], original_data[2]):
-                    label_matrix[original_box[2]:original_box[3],original_box[0]:original_box[1]] = original_label+1
-
-                dataset_for_follicle_classifier_box_data = []
-                dataset_for_follicle_classifier_box_label = []
-                for box in boxes:
-                    tmp_matrix = label_matrix[box[1]:box[3],box[0]:box[2]]
-                    if np.max(tmp_matrix) != 0:        
-                        area = tmp_matrix.shape[0]*tmp_matrix.shape[1]
-                        n_pixels = (tmp_matrix != 0).sum()
-                        
-                        if area/n_pixels > 0.5:
-                            box_label = np.argmax(np.bincount(tmp_matrix[tmp_matrix != 0].astype("int8")))-1
-                            box_data = original_data[0][box[1]:box[3], box[0]:box[2]]
-
-                            dataset_for_follicle_classifier_box_data.append(box_data)
-                            dataset_for_follicle_classifier_box_label.append(box_label)
-
-                if len(dataset_for_follicle_classifier) != 0:
-                    dataset_for_follicle_classifier.append(
-                        dataset_for_follicle_classifier_original
-                    )
-
-                if len(dataset_for_follicle_classifier_box_data) != 0:
-                    dataset_for_follicle_classifier.append(
-                        [dataset_for_follicle_classifier_box_data, dataset_for_follicle_classifier_box_label]
-                    )
-
-            tensors_for_follicle_classifier = []
-
-            for data in dataset_for_follicle_classifier:
-                x = [cv2.resize(
-                        image, 
-                        (self.follicle_classifier_size,
-                        int(image.shape[0]*self.follicle_classifier_size/image.shape[1]))
-                    ) for image in data[0] if len(image.shape) == 3]
-
-                # Padding to get a dataset of same size everywhere
-                if len(x) > 0:
-                    x = nn.utils.rnn.pad_sequence([torch.tensor(data, dtype=torch.float32) for data in x], batch_first=True)
-                    x = torch.moveaxis(x, 3, 1)
-                    x = x/255 # VGG requires a normalized pixel intensity
-
-                    # One hot encoding of the labels
-                    y = nn.functional.one_hot(
-                        torch.tensor(data[1], dtype=torch.int64), 
-                        num_classes=5
-                    ).float()
-
-                    tensors_for_follicle_classifier.append((x,y))
+            # Getting dataLoader
+            train_dataset = folliclesDataset(
+                image_loader,
+                data_augmentation=False,
+                local_path=None,
+                box_classifier=self._get_box_list,
+                in_memory=True,
+                verbose=False,
+                order="default",
+                force_reload=False,
+                mode="all"
+            )
+            
+            dataloader_collapse_train = lambda x: dataloader_collapse(x, image_size_width=self.follicle_classifier_size, reducer="resize", random_flip=True)
+            train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=dataloader_collapse_train)
 
             for i in range(self.n_epochs):
-                for x,y in tensors_for_follicle_classifier:
-                    n_batch = x.shape[0]//self.batch_size + int(x.shape[0]%self.batch_size)
-                    for batch in range(n_batch):
-                        x_temp = x[batch*self.batch_size:(batch+1)*self.batch_size].to(self.device)
-                        y_temp = y[batch*self.batch_size:(batch+1)*self.batch_size].to(self.device)
-                        
-                        if x_temp.shape[0] > 1:
-                            self.follicleClassifier.fit(x_temp,y_temp)
+                for x, y in train_dataloader:
+                    
+                    x = x.to(self.device)
+                    y = y.to(self.device)
+
+                    self.follicleClassifier.fit(x,y)
 
         return self
 
@@ -341,45 +286,34 @@ class ObjectDetector:
         # Loading data with the imageLoader
         image_loader = imageDataLoader(X)
 
+        # Getting dataloader
+        predict_dataset = folliclesDataset(
+            image_loader,
+            data_augmentation=False,
+            local_path=None,
+            box_classifier=self._get_box_list,
+            in_memory=True,
+            verbose=False,
+            order="box_ratio",
+            force_reload=False,
+            mode="all"
+        )
+        dataloader_collapse_predict = lambda x: dataloader_collapse(x, image_size_width=self.follicle_classifier_size, reducer="resize", random_flip=False)
+
         # Generating prediction
         predictions = []
 
-        for image_name in image_loader.X_filenames:
-
-            # Getting box location
-            y_hat_box = self._get_box_list(image_loader, image_name)
-
-            # Classification of the box
-            # Get the full image
-
-            full_image = image_loader.get_sample(image_name)[0]
-            y_hat_box_image = [] # Array containing the images
-            for box in y_hat_box:
-                box_image = full_image[box[1]:box[3], box[0]:box[2]]
-                y_hat_box_image.append(box_image)
+        for image in image_loader.X_filenames:
+            # Getting the images
+            x = predict_dataset[image]
+            x_metadata = [data[1] for data in x]
+            x, _ = dataloader_collapse_predict(x)
             
-            x = [cv2.resize(
-                image, 
-                (self.follicle_classifier_size,
-                int(image.shape[0]*self.follicle_classifier_size/image.shape[1]))
-            ) for image in y_hat_box_image]
+            # Getting the batch
+            x = x.to(self.device)
 
-            # Padding to get a dataset of same size everywhere
-            x = nn.utils.rnn.pad_sequence([torch.tensor(data, dtype=torch.float32) for data in x], batch_first=True)
-            x = torch.moveaxis(x, 3, 1)
-            x = x/255 # VGG requires a normalized pixel intensity
-
-            # Getting labels
-
-            ## Getting prediction in batch
-            n_batch = x.shape[0]//self.batch_size + int(x.shape[0]%self.batch_size)
-            y_hat_proba_temp_array = []
-            for batch in range(n_batch):
-                x_temp = x[batch*self.batch_size:(batch+1)*self.batch_size].to(self.device)
-                y_hat_proba_temp = self.follicleClassifier.predict(x_temp).cpu()
-                y_hat_proba_temp_array.append(y_hat_proba_temp)
-            y_hat_proba = torch.concat(y_hat_proba_temp_array, dim=0)
-
+            y_hat_box = [list(metadata["bbox"]) for metadata in x_metadata]
+            y_hat_proba = self.follicleClassifier.predict(x).cpu()
             y_hat_proba, y_hat_labels_id = torch.max(y_hat_proba, dim=1)
             y_hat_labels = np.vectorize(lambda x: self._class_dict[x])(y_hat_labels_id)
 
