@@ -320,7 +320,7 @@ class ObjectDetector:
                 x_sample, _ = dataloader_collapse_predict(x_sample)
 
                 # We need to check that the image is big enough to be processed
-                if x_sample.shape[2] >= 30 and x_sample.shape[3] >= 30:
+                if x_sample.shape[2] >= 40 and x_sample.shape[3] >= 40:
                     x_sample = x_sample.to(self.device)
                     y_hat_proba_sample = self.follicleClassifier.predict(x_sample).cpu()
                     y_hat_proba_sample, y_hat_labels_sample_id = torch.max(y_hat_proba_sample, dim=1)
