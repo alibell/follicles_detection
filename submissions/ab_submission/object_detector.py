@@ -72,7 +72,7 @@ class ObjectDetector:
         if ramp_mode == False:
             self.batch_size = batch_size
         else:
-            self.batch_size = int(batch_size/3) # Ramp may do somes parallelization or something, but it goes easier in OOM
+            self.batch_size = int(batch_size/4) # Ramp may do somes parallelization or something, but it goes easier in OOM
 
         # Defining some pre-processing functions
         self.image_preprocessing = lambda x: cv2.filter2D(
@@ -304,24 +304,37 @@ class ObjectDetector:
         predictions = []
 
         for image in image_loader.X_filenames:
+            
             # Getting the images
             x = predict_dataset[image]
             x_metadata = [data[1] for data in x]
-            x, _ = dataloader_collapse_predict(x)
             
-            # Getting the batch
-            x = x.to(self.device)
+            y_hat_box = []
+            y_hat_proba = []
+            y_hat_labels = []
 
-            y_hat_box = [list(metadata["bbox"]) for metadata in x_metadata]
-            y_hat_proba = self.follicleClassifier.predict(x).cpu()
-            y_hat_proba, y_hat_labels_id = torch.max(y_hat_proba, dim=1)
-            y_hat_labels = np.vectorize(lambda x: self._class_dict[x])(y_hat_labels_id)
+            # Looping over boxes, the idea is to not resize them for the prediction
+            for i in range(len(x)):
+                x_sample = [x[i]]
+                x_sample_box = x_metadata[i]["bbox"]
+                x_sample, _ = dataloader_collapse_predict(x_sample)
+
+                # We need to check that the image is big enough to be processed
+                if x_sample.shape[2] >= 30 and x_sample.shape[3] >= 30:
+                    x_sample = x_sample.to(self.device)
+                    y_hat_proba_sample = self.follicleClassifier.predict(x_sample).cpu()
+                    y_hat_proba_sample, y_hat_labels_sample_id = torch.max(y_hat_proba_sample, dim=1)
+                    y_hat_labels_sample = np.vectorize(lambda x: self._class_dict[x])(y_hat_labels_sample_id)
+
+                    y_hat_box.append(x_sample_box)
+                    y_hat_proba.append(y_hat_proba_sample[0].item())
+                    y_hat_labels.append(y_hat_labels_sample[0])
 
             predictions.append([
                 dict(zip(
                     ["proba","bbox","class"],
                     pred
-                )) for pred in zip(y_hat_proba.numpy().tolist(), 
+                )) for pred in zip(y_hat_proba, 
                                     y_hat_box, 
                                     y_hat_labels
                                 )
