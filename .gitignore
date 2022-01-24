@@ -8,6 +8,8 @@ train
 test
 retinanet
 val
+models
+params
 *.csv
 *_TFRecord
 magick-*
