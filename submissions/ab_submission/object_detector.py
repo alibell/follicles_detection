@@ -12,8 +12,8 @@ from torch.utils.data import DataLoader
 script_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_path)
 
-from follicleClassifier import follicleClassifier
 from dataLoaders import imageDataLoader
+from follicleClassifier import follicleClassifier
 from follicleDetector import follicleDetector, follicle_detector_lambda
 from dataset import dataloader_collapse, folliclesDataset
 
