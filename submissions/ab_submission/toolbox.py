@@ -24,6 +24,6 @@ def write_rectangle(image, preds, folder=None, filename=None, negative=True):
             img_draw.text((x1, y1-70), label, font=font, fill="black")
 
     if folder is not None and filename is not None:
-        img.save(f"./data/{folder}/{filename}")
+        img.save(f"{folder}/{filename}")
     
     return np.array(img)

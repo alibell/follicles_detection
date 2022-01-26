@@ -3,6 +3,7 @@ import pandas as pd
 import cv2
 import importlib
 import os
+from matplotlib import pyplot as plt
 import sys
 from functools import partial
 import torch

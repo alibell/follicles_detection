@@ -195,7 +195,7 @@ class folliclesDataset(Dataset):
         # Generating the new windows on the image
         windows = []
 
-        if train_loader.has_y:
+        if self.image_loader.has_y:
             bbox_array = np.array(original_boxes)
             label_array = np.array(original_labels)
 
@@ -231,7 +231,7 @@ class folliclesDataset(Dataset):
                     window_data = Pad((delta_x, delta_y))(window_data)
 
                 # Getting the bbox and labels
-                if train_loader.has_y:
+                if self.image_loader.has_y:
                     bbox_window = bbox_array.copy()
                     bbox_window -= np.repeat([[window_xmin, window_ymin]], 2, axis=0).flatten()
                     bbox_window = np.clip(bbox_window, a_min = 0, a_max=np.repeat(np.array([[window_size[1], window_size[0]]]),2, axis=0).flatten())
@@ -296,7 +296,7 @@ class folliclesDataset(Dataset):
                 data = []
                 for x in metadata:
                     with open(x["path"], "rb") as f:
-                        data.append(pickle.load(f))
+                        data.append(np.array(Image.open(f)).astype(np.uint8))
 
             output = list(zip(data, metadata))
 
